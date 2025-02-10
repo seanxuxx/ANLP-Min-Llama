@@ -1,13 +1,15 @@
+import math
 from contextlib import nullcontext
 from typing import Optional, Tuple
-import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from base_llama import LlamaPreTrainedModel, LlamaConfig
+from base_llama import LlamaConfig, LlamaPreTrainedModel
 from rope import apply_rotary_emb
 from utils import *
+
 
 # Root Mean Square Layer Normalization (https://arxiv.org/abs/1910.07467)
 # borrowed from the official Llama implementation:
@@ -33,7 +35,7 @@ class RMSNorm(torch.nn.Module):
     def _norm(self, x):
         """
         Compute the root mean square normalization. Use Equation 4 under
-        Section 4 of https://arxiv.org/abs/1910.07467 as a reference. Add 
+        Section 4 of https://arxiv.org/abs/1910.07467 as a reference. Add
         the given epsilon value (self.eps) to the tensor's norm (i.e. inside
         the square root in Equation 4) before normalizing the tensor.
 
@@ -59,6 +61,7 @@ class RMSNorm(torch.nn.Module):
         """
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
+
 
 class Attention(nn.Module):
     def __init__(self, config: LlamaConfig):
@@ -199,6 +202,7 @@ class LlamaLayer(nn.Module):
         # todo
         raise NotImplementedError
 
+
 class Llama(LlamaPreTrainedModel):
     def __init__(self, config: LlamaConfig):
         '''
@@ -219,7 +223,7 @@ class Llama(LlamaPreTrainedModel):
         self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
 
         # share the unembedding parameters with the embedding parameters
-        self.tok_embeddings.weight = self.output.weight # https://paperswithcode.com/method/weight-tying
+        self.tok_embeddings.weight = self.output.weight  # https://paperswithcode.com/method/weight-tying
 
         # some useful precompute for the RoPE relative positional embeddings
 
@@ -252,7 +256,7 @@ class Llama(LlamaPreTrainedModel):
             logits = self.output(h)
         else:
             # inference-time mini-optimization: only forward the output on the very last position
-            logits = self.output(h[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = self.output(h[:, [-1], :])  # note: using list [-1] to preserve the time dim
 
         return logits, h
 
@@ -261,18 +265,19 @@ class Llama(LlamaPreTrainedModel):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
-        We perform this generation using basic temperature sampling with nucleus sampling (i.e. 
+        We perform this generation using basic temperature sampling with nucleus sampling (i.e.
         limiting ourselves to sampling from the most probable tokens with cumulative probability
-        just less than top_p at each timestep). Most likely you'll want to make sure to be in 
-        model.eval() mode of operation for this. Also note this is a super inefficient version of 
+        just less than top_p at each timestep). Most likely you'll want to make sure to be in
+        model.eval() mode of operation for this. Also note this is a super inefficient version of
         sampling with no key/value cache, but you are free to add any optimizations on top of this.
         """
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
-            idx_cond = idx if idx.size(1) <= self.params.max_seq_len else idx[:, -self.params.max_seq_len:]
+            idx_cond = idx if idx.size(
+                1) <= self.params.max_seq_len else idx[:, -self.params.max_seq_len:]
             # forward the model to get the logits for the index in the sequence
             logits, _ = self(idx_cond)
-            logits = logits[:, -1, :] # crop to just the final time step
+            logits = logits[:, -1, :]  # crop to just the final time step
             # todo
             raise NotImplementedError
 
@@ -284,7 +289,7 @@ class Llama(LlamaPreTrainedModel):
                 Perform temperature sampling with top-p (nucleus) sampling:
                 1) Scale the logits with the temperature followed by normalization using Softmax.
                 2) Sort the tokens according to their normalized logits
-                3) Identify the tokens within the top-p cumulative. Make sure to handle any edge cases here. 
+                3) Identify the tokens within the top-p cumulative. Make sure to handle any edge cases here.
                 4) Filter and normalize the resulting probabilities.
                 5) Sample from this scaled probability distribution.
                 '''
@@ -292,28 +297,35 @@ class Llama(LlamaPreTrainedModel):
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
 
-
         return idx
 
+
 def load_pretrained(checkpoint):
-  device = 'cuda' if torch.cuda.is_available() else 'cpu' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
-  #dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
-  dtype = "float32"
+    # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    #dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
+    dtype = "float32"
 
-  torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
-  torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-  device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
-  ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-  ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+    torch.backends.cuda.matmul.allow_tf32 = True  # allow tf32 on matmul
+    torch.backends.cudnn.allow_tf32 = True  # allow tf32 on cudnn
+    device_type = 'cuda' if 'cuda' in device else 'cpu'  # for later use in torch.autocast
+    ptdtype = {'float32': torch.float32,
+               'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+    ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(
+        device_type=device_type, dtype=ptdtype)
 
-  # init from a model saved in a specific directory
-  checkpoint_dict = torch.load(checkpoint, map_location=device)
-  config = LlamaConfig(**checkpoint_dict['model_args'])
-  model = Llama(config)
-  state_dict = checkpoint_dict['model']
-  unwanted_prefix = '_orig_mod.'
-  for k,v in list(state_dict.items()):
-      if k.startswith(unwanted_prefix):
-          state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
-  model.load_state_dict(state_dict, strict=False)
-  return model
+    # init from a model saved in a specific directory
+    checkpoint_dict = torch.load(checkpoint, map_location=device)
+    config = LlamaConfig(**checkpoint_dict['model_args'])
+    model = Llama(config)
+    state_dict = checkpoint_dict['model']
+    unwanted_prefix = '_orig_mod.'
+    for k, v in list(state_dict.items()):
+        if k.startswith(unwanted_prefix):
+            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+    model.load_state_dict(state_dict, strict=False)
+    return model
+    model.load_state_dict(state_dict, strict=False)
+    return model
+    model.load_state_dict(state_dict, strict=False)
+    return model

@@ -1,5 +1,7 @@
 from typing import Tuple
+
 import torch
+
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     """
@@ -22,6 +24,7 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     assert freqs_cis.shape == (x.shape[1], x.shape[-1])
     shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(shape)
+
 
 def apply_rotary_emb(
     query: torch.Tensor,
@@ -72,4 +75,6 @@ def apply_rotary_emb(
     query_out = None
     key_out = None
     # Return the rotary position embeddings for the query and key tensors
+    return query_out, key_out    # Return the rotary position embeddings for the query and key tensors
+    return query_out, key_out    # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out
