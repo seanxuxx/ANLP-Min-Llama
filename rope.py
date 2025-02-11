@@ -26,13 +26,11 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     return freqs_cis.view(shape)
 
 
-def apply_rotary_emb(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    head_dim: int,
-    max_seq_len: int,
-    theta: float = 10000.0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+def apply_rotary_emb(query: torch.Tensor,
+                     key: torch.Tensor,
+                     head_dim: int,
+                     max_seq_len: int,
+                     theta: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Apply rotary embeddings to input tensors using the given frequency tensor.
 
@@ -53,7 +51,7 @@ def apply_rotary_emb(
 
     _, seqlen, _, _ = query.shape
     device = query.device
-    # todo
+    # TODO
     #
     # Please refer to slide 22 in https://phontron.com/class/anlp2024/assets/slides/anlp-05-transformers.pdf
     # and Section 3 in https://arxiv.org/abs/2104.09864.
@@ -66,15 +64,20 @@ def apply_rotary_emb(
 
     # First, compute the trigonometric values in the second and fourth columns in
     # slide 22 (linked above).
+    pos = torch.arange(seqlen, device=device)
+    i = torch.arange(0, head_dim, 2, device=device).repeat_interleave(2)
+    thetas = theta ** (- i / head_dim)
+    pos_thetas = torch.outer(pos, thetas)  # (seqlen, head_dim)
+    pos_thetas = reshape_for_broadcast(pos_thetas, query)  # (batch_size, seqlen, 1, head_dim)
+    cos = pos_thetas.cos()
+    sin = pos_thetas.sin()
 
     # Then, combine these trigonometric values with the tensors query_real, query_imag,
     # key_real, and key_imag.
+    query_rope = torch.stack((-query_imag, query_real), dim=-1).view(query.shape)
+    key_rope = torch.stack((-key_imag, key_real), dim=-1).view(key.shape)
 
-    raise NotImplementedError
-
-    query_out = None
-    key_out = None
+    query_out = query * cos + query_rope * sin
+    key_out = key * cos + key_rope * sin
     # Return the rotary position embeddings for the query and key tensors
     return query_out, key_out    # Return the rotary position embeddings for the query and key tensors
-    return query_out, key_out    # Return the rotary position embeddings for the query and key tensors
-    return query_out, key_out
