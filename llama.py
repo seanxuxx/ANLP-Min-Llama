@@ -254,7 +254,7 @@ class Llama(LlamaPreTrainedModel):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None):
         _batch_size, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         h = self.dropout(h)
@@ -265,7 +265,7 @@ class Llama(LlamaPreTrainedModel):
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss
-            logits = self.output(h)
+            logits = self.output(h)  # (bs, seqlen, vocab_size)
         else:
             # inference-time mini-optimization: only forward the output on the very last position
             logits = self.output(h[:, [-1], :])  # note: using list [-1] to preserve the time dim
@@ -284,18 +284,20 @@ class Llama(LlamaPreTrainedModel):
         sampling with no key/value cache, but you are free to add any optimizations on top of this.
         """
         for _ in range(max_new_tokens):
-            # if the sequence context is growing too long we must crop it at block_size
-            idx_cond = idx if idx.size(
-                1) <= self.params.max_seq_len else idx[:, -self.params.max_seq_len:]
-            # forward the model to get the logits for the index in the sequence
+            # If the sequence context is growing too long we must crop it at block_size
+            idx_cond = (idx if idx.size(1) <= self.params.max_seq_len else
+                        idx[:, -self.params.max_seq_len:])
+            # Forward the model to get the logits for the index in the sequence
             logits, _ = self(idx_cond)
-            logits = logits[:, -1, :]  # crop to just the final time step
-            # todo
-            raise NotImplementedError
+            # Crop to just the final time step
+            # (bs, seqlen, vocab_size) -> (bs, vocab_size)
+            logits = logits[:, -1, :]
+            # TODO
+            # raise NotImplementedError
 
             if temperature == 0.0:
-                # select the single most likely index
-                idx_next = None
+                # Select the single most likely index
+                idx_next = torch.argmax(logits, dim=-1, keepdim=True)
             else:
                 '''
                 Perform temperature sampling with top-p (nucleus) sampling:
@@ -305,9 +307,18 @@ class Llama(LlamaPreTrainedModel):
                 4) Filter and normalize the resulting probabilities.
                 5) Sample from this scaled probability distribution.
                 '''
-                idx_next = None
-            # append sampled index to the running sequence and continue
-            idx = torch.cat((idx, idx_next), dim=1)
+                probs = F.softmax(logits / temperature, dim=-1)
+                probs, prob_indices = torch.sort(probs, dim=-1, descending=True)
+                # Identify tokens within top-p cumulative
+                cum_probs = torch.cumsum(probs, dim=-1)
+                probs[~(cum_probs < top_p)] = 0.0
+                # Normalize result probabilities
+                probs.div_(probs.sum(dim=-1, keepdim=True))
+                # Sample from scaled probability distribution
+                idx_next = torch.multinomial(probs, num_samples=1)
+
+            # Append sampled index to the running sequence and continue
+            idx = torch.cat((idx, idx_next), dim=1)  # type: ignore
 
         return idx
 
