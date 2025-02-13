@@ -308,14 +308,17 @@ class Llama(LlamaPreTrainedModel):
                 5) Sample from this scaled probability distribution.
                 '''
                 probs = F.softmax(logits / temperature, dim=-1)
-                probs, prob_indices = torch.sort(probs, dim=-1, descending=True)
+                sort_probs, sort_prob_indices = torch.sort(probs, dim=-1, descending=True)
                 # Identify tokens within top-p cumulative
-                cum_probs = torch.cumsum(probs, dim=-1)
-                probs[~(cum_probs < top_p)] = 0.0
+                cum_probs = torch.cumsum(sort_probs, dim=-1)
+                keep_mask = cum_probs < top_p
+                keep_mask[:, 0] = True  # Ensure at least one token remains
+                sort_probs[~keep_mask] = 0.0
                 # Normalize result probabilities
-                probs.div_(probs.sum(dim=-1, keepdim=True))
+                sort_probs.div_(sort_probs.sum(dim=-1, keepdim=True))
                 # Sample from scaled probability distribution
-                idx_next = torch.multinomial(probs, num_samples=1)
+                sample_indices = torch.multinomial(sort_probs, num_samples=1)
+                idx_next = torch.gather(sort_prob_indices, -1, sample_indices)
 
             # Append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)  # type: ignore
