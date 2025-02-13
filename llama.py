@@ -348,7 +348,3 @@ def load_pretrained(checkpoint):
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
     model.load_state_dict(state_dict, strict=False)
     return model
-    model.load_state_dict(state_dict, strict=False)
-    return model
-    model.load_state_dict(state_dict, strict=False)
-    return model
