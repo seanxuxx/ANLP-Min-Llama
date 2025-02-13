@@ -61,4 +61,6 @@ class LlamaEmbeddingClassifier(torch.nn.Module):
         # TODO
         logits, h = self.llama(input_ids)
         h = h[:, -1, :]
-        return F.softmax(self.classifier_head(h), dim=-1)
+        h = self.dropout(h)
+        logits = self.classifier_head(h)
+        return F.log_softmax(logits, dim=-1)
