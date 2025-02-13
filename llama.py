@@ -183,7 +183,7 @@ class LlamaLayer(nn.Module):
         self.attention = Attention(config)
         self.feed_forward = FeedForward(
             dim=config.dim,
-            hidden_dim=config.hidden_dim,
+            hidden_dim=config.hidden_dim,  # type: ignore
             multiple_of=config.multiple_of,
             dropout=config.dropout,
         )
@@ -206,8 +206,13 @@ class LlamaLayer(nn.Module):
         5) add a residual connection from the unnormalized self-attention output to the
            output of the feed-forward network
         '''
-        # todo
-        raise NotImplementedError
+        # TODO
+        attn_input = self.attention_norm(x)
+        attn_output = self.attention(attn_input)
+        attn_output += x
+        ffn_input = self.ffn_norm(attn_output)
+        ffn_output = self.feed_forward(ffn_input)
+        return attn_output + ffn_output
 
 
 class Llama(LlamaPreTrainedModel):
