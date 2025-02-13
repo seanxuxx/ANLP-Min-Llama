@@ -46,8 +46,8 @@ class RMSNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
         """
         # TODO
-        norm = torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        return x / norm
+        rms = torch.sqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return x / rms
 
     def forward(self, x):
         """
@@ -97,13 +97,17 @@ class Attention(nn.Module):
         Make sure to use attention_dropout (self.attn_dropout) on the computed
         attention matrix before applying it to the value tensor.
         '''
-        # todo
-        raise NotImplementedError
+        # TODO
+        # (bs, n_local_heads, seqlen, head_dim) -> (bs, n_local_heads, seqlen, seqlen)
+        scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.head_dim)
+        attn = F.softmax(scores, dim=-1)
+        attn = self.attn_dropout(attn)
 
-    def forward(
-        self,
-        x: torch.Tensor
-    ):
+        # (bs, n_local_heads, seqlen, seqlen) -> (bs, n_local_heads, seqlen, head_dim)
+        output = torch.matmul(attn, value)
+        return output
+
+    def forward(self, x: torch.Tensor):
         '''
         Llama2 uses Grouped-Query Attention. The details of GQA are actually
         not critical to solving this assignment; you are simply asked to
@@ -131,16 +135,18 @@ class Attention(nn.Module):
         key = torch.repeat_interleave(key, dim=2, repeats=self.n_rep)
         value = torch.repeat_interleave(value, dim=2, repeats=self.n_rep)
 
-        # make heads into a batch dimension
-        query = query.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        # Make heads into a batch dimension
+        # (bs, n_local_heads, seqlen, head_dim)
+        query = query.transpose(1, 2)
         key = key.transpose(1, 2)
         value = value.transpose(1, 2)
         output = self.compute_query_key_value_scores(query, key, value)
 
-        # restore time as batch dimension and concat heads
+        # Restore time as batch dimension and concat heads
+        # (bs, seqlen, n_local_heads*head_dim)
         output = output.transpose(1, 2).contiguous().view(batch_size, seqlen, -1)
 
-        # final projection into the residual stream
+        # Final projection into the residual stream
         output = self.resid_dropout(self.compute_output(output))
         return output
 
