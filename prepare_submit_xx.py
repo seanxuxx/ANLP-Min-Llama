@@ -1,4 +1,5 @@
 import os
+import sys
 import zipfile
 
 required_files = {'run_llama.py',
@@ -51,15 +52,24 @@ my_files = [
     'setup.sh',
 ]
 
+
+def main(path: str, aid: str):
+    aid = aid.strip()
+    if os.path.isdir(path):
+        with zipfile.ZipFile(f"{aid}.zip", 'w') as zz:
+            for root, dirs, files in os.walk(path):
+                if '.git' in root or '__pycache__' in root:
+                    continue  # ignore some parts
+                for file in files:
+                    if file not in my_files:
+                        continue
+                    ff = os.path.join(root, file)
+                    rpath = os.path.relpath(ff, path)
+                    zz.write(ff, os.path.join(".", aid, rpath))
+                    if rpath in required_files:
+                        required_files.remove(rpath)
+        assert len(required_files) == 0, breakpoint()
+
+
 if __name__ == '__main__':
-    aid = 'xiaoxu'
-    with zipfile.ZipFile(f"{aid}.zip", 'w') as zz:
-        for file in my_files:
-            if file.endswith(".zip"):
-                continue
-            ff = os.path.join(os.getcwd(), file)
-            rpath = os.path.relpath(ff, os.getcwd())
-            zz.write(ff, os.path.join(".", aid, rpath))
-            if rpath in required_files:
-                required_files.remove(rpath)
-    assert len(required_files) == 0, breakpoint()
+    main(path=os.getcwd(), aid='xiaoxu')
